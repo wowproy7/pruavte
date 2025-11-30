@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Server Status & Mini Browser</title>
+
+    <style>
+        /* --- STATUS SCREEN STYLES --- */
+        #status-screen {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            width: 100vw;
+            background-color: #1a1a2e;
+            color: #e0e0e0;
+            font-family: 'Consolas', monospace;
+            text-align: center;
+            transition: opacity 1s ease-in-out;
+        }
+
+        .update-title {
+            font-size: 3.5em;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: #4CAF50;
+            text-shadow: 0 0 10px #4CAF50, 0 0 20px rgba(76, 175, 80, 0.5);
+            margin-bottom: 20px;
+            opacity: 0;
+            animation: 
+                startup-fade 4s ease-in-out forwards,
+                dot-animation-start 1.5s infinite steps(1) 1s;
+        }
+
+        @keyframes startup-fade {
+            0% { opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+
+        .dots {
+            display: inline-block;
+            overflow: hidden;
+            vertical-align: bottom;
+            width: 1.5em;
+        }
+
+        @keyframes dot-animation-start {
+            0%   { content: ''; }
+            25%  { content: '.'; }
+            50%  { content: '..'; }
+            75%  { content: '...'; }
+            100% { content: '...'; }
+        }
+        
+        /* --- BROWSER STYLES --- */
+        :root {
+            --bg-gradient-start: #1e063a;
+            --bg-gradient-mid: #59168b;
+            --window-bg: #4f2178;
+            --title-bar-bg: #3c096c;
+            --input-bg: #2b0b57;
+            --go-btn-bg: #59168b;
+            --text-color: #f3e8ff;
+            --nav-btn-bg: var(--input-bg);
+            --bookmark-tile-bg: #3c096c;
+        }
+
+        body.light-mode {
+            --bg-gradient-start: #f0f0f5;
+            --bg-gradient-mid: #e1e1e9;
+            --window-bg: #ffffff;
+            --title-bar-bg: #e9ecef;
+            --input-bg: #ffffff;
+            --go-btn-bg: #007bff;
+            --text-color: #343a40;
+            --nav-btn-bg: #e1e1e9;
+            --bookmark-tile-bg: #f8f9fa;
+        }
+        body.light-mode .browser-window { box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 0, 0, 0.1); }
+        body.light-mode #urlInput:focus { background: #f8f9fa; box-shadow: 0 0 0 1px #007bff; }
+        body.light-mode #goBtn:hover { background: #0056b3; }
+        body.light-mode .bookmark-tile { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); }
+
+        body {
+            margin: 0;
+            font-family: 'SF Pro Display', Arial, sans-serif;
+            overflow: hidden;
+            background: linear-gradient(135deg, var(--bg-gradient-start), var(--bg-gradient-mid), var(--bg-gradient-start));
+            background-size: 600% 600%;
+            animation: bgMove 25s ease infinite;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            transition: background-color 0.5s ease;
+        }
+
+        @keyframes bgMove {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .browser-window-wrapper {
+            width: 100%; height: 100%; display: none;
+        }
+        
+        .browser-window {
+            width: 90%; max-width: 1000px; height: 600px; background: var(--window-bg); border-radius: 18px; backdrop-filter: blur(15px); position: absolute; top: 50%; left: 50%; display: flex; flex-direction: column; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.1); transition: all 0.3s ease;
+            opacity: 0; transform: translate(-50%, -50%) scale(0.9); pointer-events: none;
+        }
+        .browser-window.is-open {
+            opacity: 1; transform: translate(-50%, -50%) scale(1); pointer-events: auto;
+        }
+
+        .dock-button {
+            position: fixed; bottom: 15px; left: 15px; padding: 6px 12px; border-radius: 8px; border: none; background: var(--go-btn-bg); color: var(--text-color); cursor: pointer; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5); z-index: 1000; transition: background 0.2s, transform 0.1s, opacity 0.3s; display: none; opacity: 0;
+        }
+        .dock-button:hover { background: #7a3cad; transform: translateY(-2px); }
+        
+        .title-bar {
+            padding: 12px 15px; background: var(--title-bar-bg); border-bottom: 1px solid var(--input-bg); display: flex; align-items: center; gap: 10px; cursor: grab; border-top-left-radius: 18px; border-top-right-radius: 18px; transition: background-color 0.5s;
+        }
+        .title-bar:active { cursor: grabbing; }
+        .control-btn-group { display: flex; gap: 8px; flex-shrink: 0; }
+        .control-btn {
+            width: 12px; height: 12px; border-radius: 50%; border: none; cursor: pointer; transition: color 0.1s; position: relative; display: flex; justify-content: center; align-items: center; font-size: 8px; color: transparent;
+        }
+        .control-btn:hover { color: rgba(0, 0, 0, 0.8); }
+        .close-btn { background: #ff5f56; } .minimize-btn { background: #ffbd2e; } .maximize-btn { background: #27c93f; }
+        .nav-btn { background: var(--nav-btn-bg) !important; color: var(--text-color) !important; transition: background-color 0.5s, color 0.5s; }
+        body.light-mode .nav-btn:hover { background: #d8d8e0 !important; }
+        #addBookmarkBtn {
+            width: 28px; height: 28px; border-radius: 8px; background: #facc15; color: #343a40; font-size: 18px; line-height: 0; padding: 0; margin-left: 10px; transition: background 0.2s;
+        }
+        #addBookmarkBtn:hover { background: #fbbf24; }
+        .input-area { flex-grow: 1; display: flex; align-items: center; gap: 8px; }
+        #urlInput {
+            flex: 1; padding: 6px 10px; border-radius: 6px; border: none; background: var(--input-bg); color: var(--text-color); font-size: 14px; height: 28px; box-sizing: border-box; transition: background 0.5s, box-shadow 0.5s, color 0.5s;
+        }
+        #urlInput:focus { outline: none; background: var(--bg-gradient-start); box-shadow: 0 0 0 1px var(--go-btn-bg); }
+        #goBtn {
+            padding: 6px 15px; border-radius: 6px; border: none; background: var(--go-btn-bg); color: var(--text-color); font-size: 14px; cursor: pointer; transition: background 0.2s, color 0.5s; flex-shrink: 0; height: 28px;
+        }
+        #goBtn:hover { background: #6c2aa2; }
+        .content-area {
+            flex: 1; width: 100%; display: flex; flex-direction: column; justify-content: flex-start; align-items: center; color: var(--text-color); font-size: 18px; font-weight: 500; text-align: center; padding: 30px; transition: color 0.5s; overflow-y: auto;
+        }
+        #bookmarkGrid { display: flex; flex-wrap: wrap; gap: 20px; max-width: 800px; justify-content: center; margin-top: 20px; width: 100%; }
+        .bookmark-tile {
+            width: 120px; height: 120px; background: var(--bookmark-tile-bg); border-radius: 12px; display: flex; flex-direction: column; justify-content: center; align-items: center; cursor: pointer; color: var(--text-color); text-decoration: none; transition: transform 0.1s, box-shadow 0.2s, background 0.5s; position: relative; padding: 10px; box-sizing: border-box; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+        }
+        .bookmark-tile:hover { transform: translateY(-3px); box-shadow: 0 6px 15px rgba(0, 0, 0, 0.4); }
+        .bookmark-icon { font-size: 32px; margin-bottom: 8px; }
+        .bookmark-name { font-size: 14px; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; width: 100%; }
+        .remove-btn {
+            position: absolute; top: 5px; right: 5px; background: #dc3545; color: white; border: none; border-radius: 50%; width: 20px; height: 20px; font-size: 12px; line-height: 1; opacity: 0; transition: opacity 0.2s; z-index: 20;
+        }
+        .bookmark-tile:hover .remove-btn { opacity: 1; }
+        #webView {
+            width: 100%; height: 100%; border: none; background-color: var(--window-bg); border-bottom-left-radius: 18px; border-bottom-right-radius: 18px; transition: background-color 0.5s;
+        }
+        .loader-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.4); display: none; justify-content: center; align-items: center; border-radius: 18px; z-index: 10;
+        }
+        .loader {
+            border: 4px solid #f3f3f3; border-top: 4px solid var(--go-btn-bg); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; transition: border-top-color 0.5s;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 768px) {
+            body { animation: none; background-size: cover; }
+            .browser-window {
+                width: 100%; max-width: 100%; height: 100vh; border-radius: 0; box-shadow: none; position: fixed; top: 0; left: 0; transform: none !important; opacity: 1; pointer-events: auto; display: flex !important;
+            }
+            .title-bar { cursor: default; padding: 10px; border-radius: 0; flex-wrap: wrap; }
+            .control-btn-group { order: 3; width: 100%; justify-content: flex-start; margin-top: 5px; margin-left: 50px; }
+            .control-btn { width: 10px; height: 10px; }
+            .nav-btn { width: 35px !important; height: 35px !important; font-size: 16px; }
+            .input-area { order: 2; flex-grow: 1; margin-right: 5px; }
+            #urlInput { padding: 8px 12px; height: 35px; font-size: 16px; }
+            #goBtn { padding: 8px 15px; height: 35px; font-size: 16px; }
+            #addBookmarkBtn { width: 35px; height: 35px; font-size: 20px; margin-left: 0; order: 4; }
+            .dock-button { display: none; }
+            .content-area { padding: 15px 10px; }
+            .bookmark-tile { width: 80px; height: 80px; padding: 5px; }
+            .bookmark-icon { font-size: 24px; margin-bottom: 4px; }
+            .bookmark-name { font-size: 12px; }
+        }
+    </style>
+</head>
+<body class="dark-mode">
+
+    <div id="status-screen">
+        <div class="update-title">
+            SERVER IS STARTING UP<span class="dots"></span>
+        </div>
+    </div>
+
+    <div class="browser-window-wrapper" id="browserWrapper">
+        <div class="browser-window" id="browserWindow">
+            <div class="title-bar" id="dragBar">
+                <div class="control-btn-group">
+                    <button class="control-btn" id="themeToggleBtn" style="background: #a855f7; color: white; width: 14px; height: 14px; font-size: 10px; margin-right: 12px;">☀️</button>
+                    <button class="control-btn close-btn" id="closeBtn">×</button>
+                    <button class="control-btn minimize-btn" id="minimizeBtn">-</button>
+                    <button class="control-btn maximize-btn" id="maximizeBtn">+</button>
+                </div>
+                
+                <button class="control-btn nav-btn" id="backBtn" style="width: 28px; height: 28px;">&lt;</button>
+                <button class="control-btn nav-btn" id="forwardBtn" style="width: 28px; height: 28px;">&gt;</button>
+
+                <div class="input-area">
+                    <input type="text" id="urlInput" placeholder="Try 'yt', 'ddg' (Weather Test), or 'wiki' (Baseline)..." />
+                    <button id="goBtn">Go</button>
+                </div>
+                
+                <button id="addBookmarkBtn" title="Add current site to bookmarks">+</button>
+            </div>
+
+            <div class="content-area" id="initialContent">
+                <p>Your Bookmarks</p>
+                <div id="bookmarkGrid"></div>
+            </div>
+            
+            <iframe id="webView" src="" style="display: none;"></iframe>
+            
+            <div class="loader-overlay" id="loaderOverlay">
+                <div class="loader"></div>
+            </div>
+        </div>
+
+        <button class="dock-button" id="openBrowserBtn">Browser</button>
+    </div>
+
+    <script>
+        /* ================================================= */
+        /* --- STARTUP ANIMATION LOGIC --- */
+        /* ================================================= */
+        
+        const ANIMATION_DURATION_MS = 4000; 
+
+        const statusScreen = document.getElementById('status-screen');
+        const browserWrapper = document.getElementById('browserWrapper');
+
+        function showBrowser() {
+            statusScreen.style.opacity = '0'; 
+            
+            setTimeout(() => {
+                statusScreen.style.display = 'none';
+                browserWrapper.style.display = 'block';
+                initBrowser(); 
+            }, 1000); 
+        }
+
+        setTimeout(showBrowser, ANIMATION_DURATION_MS);
+
+
+        /* ------------------------------------------------------------- */
+        /* --- BROWSER FUNCTIONALITY (LATEST VERSION) --- */
+        /* ------------------------------------------------------------- */
+
+        function initBrowser() {
+            if (window.browserInitialized) return;
+            window.browserInitialized = true;
+
+            const win = document.getElementById("browserWindow");
+            const dragBar = document.getElementById("dragBar");
+            const goBtn = document.getElementById("goBtn");
+            const urlInput = document.getElementById("urlInput");
+            const webView = document.getElementById("webView");
+            const initialContent = document.getElementById("initialContent");
+            const loaderOverlay = document.getElementById("loaderOverlay");
+            const themeToggleBtn = document.getElementById("themeToggleBtn");
+            const bookmarkGrid = document.getElementById("bookmarkGrid");
+
+            const closeBtn = document.getElementById("closeBtn");
+            const openBrowserBtn = document.getElementById("openBrowserBtn");
+            const minimizeBtn = document.getElementById("minimizeBtn");
+            const backBtn = document.getElementById("backBtn");
+            const forwardBtn = document.getElementById("forwardBtn");
+            const addBookmarkBtn = document.getElementById("addBookmarkBtn");
+
+            let isDragging = false, offsetX, offsetY;
+
+            const isMobile = window.matchMedia("(max-width: 768px)").matches;
+
+            if (win) {
+                win.style.left = "50%";
+                win.style.top = "50%";
+                renderBookmarks();
+            }
+
+            if (win && openBrowserBtn) {
+                if (!isMobile) {
+                    win.style.display = "none";
+                    openBrowserBtn.style.display = "block";
+                    setTimeout(() => openBrowserBtn.style.opacity = "1", 100); 
+                } else {
+                    win.style.display = "flex";
+                    win.classList.add('is-open');
+                    openBrowserBtn.style.display = "none";
+                }
+            }
+
+            if (!isMobile && dragBar && win) {
+                dragBar.addEventListener("mousedown", startDrag);
+                dragBar.addEventListener("touchstart", startDrag);
+            }
+
+            function startDrag(e) {
+                if (e.target.closest('#urlInput') || e.target.closest('#goBtn') || e.target.closest('.control-btn') || e.target.closest('#addBookmarkBtn')) {
+                    return;
+                }
+                isDragging = true;
+                const pos = e.touches ? e.touches[0] : e;
+                const rect = win.getBoundingClientRect();
+                offsetX = pos.clientX - rect.left;
+                offsetY = pos.clientY - rect.top;
+                document.addEventListener("mousemove", dragMove);
+                document.addEventListener("touchmove", dragMove);
+                document.addEventListener("mouseup", stopDrag);
+                document.addEventListener("touchend", stopDrag);
+            }
+
+            function dragMove(e) {
+                if (!isDragging) return;
+                e.preventDefault();
+                const pos = e.touches ? e.touches[0] : e;
+                win.style.left = pos.clientX - offsetX + "px";
+                win.style.top = pos.clientY - offsetY + "px";
+                win.style.transform = "none";
+            }
+
+            function stopDrag() {
+                isDragging = false;
+                document.removeEventListener("mousemove", dragMove);
+                document.removeEventListener("touchmove", dragMove);
+                document.removeEventListener("mouseup", stopDrag);
+                document.removeEventListener("touchend", stopDrag);
+            }
+
+            if (closeBtn && openBrowserBtn && win) {
+                closeBtn.onclick = () => {
+                    if (!isMobile) {
+                        win.classList.remove('is-open');
+                        setTimeout(() => win.style.display = "none", 300);
+                        openBrowserBtn.style.display = "block";
+                        setTimeout(() => openBrowserBtn.style.opacity = "1", 10);
+                    } else {
+                        win.style.display = "none";
+                    }
+                };
+            }
+
+            if (openBrowserBtn && win) {
+                openBrowserBtn.onclick = () => {
+                    if (!isMobile) {
+                        openBrowserBtn.style.opacity = "0";
+                        setTimeout(() => openBrowserBtn.style.display = "none", 300);
+                        
+                        win.style.display = "flex";
+                        setTimeout(() => {
+                            win.classList.add('is-open');
+                        }, 10);
+                    }
+                };
+            }
+
+            if (minimizeBtn) minimizeBtn.onclick = closeBtn.onclick;
+
+            if (goBtn && urlInput) {
+                goBtn.onclick = () => loadPage();
+                urlInput.addEventListener("keydown", (e) => {
+                    if (e.key === "Enter") loadPage();
+                });
+            }
+
+            // --- FINAL LOADPAGE FUNCTION (Weather Map Test) ---
+            function loadPage() {
+                if (!urlInput || !webView || !initialContent || !loaderOverlay) return;
+                
+                urlInput.blur();
+
+                let url = urlInput.value.trim().toLowerCase();
+
+                if (!url) {
+                    webView.style.display = "none";
+                    initialContent.style.display = "flex";
+                    return;
+                }
+
+                initialContent.style.display = "none";
+                webView.style.display = "block";
+                loaderOverlay.style.display = "flex";
+                
+                // === SHORTCUTS (Using known embeddable mirrors) ===
+
+                // FIX: DDG now points to an embeddable Weather Map for testing
+                if (url === "ddg" || url === "google") {
+                    url = "https://www.windy.com/plugins/iframe?set:32.776,-96.797,8"; 
+                }
+                // YouTube: Uses Piped (reliable video frontend)
+                else if (url === "yt" || url === "youtube") {
+                    url = "https://piped.video/"; 
+                }
+                // Wikipedia: Stays direct, as it works well.
+                else if (url === "wiki" || url === "test") {
+                    url = "https://www.wikipedia.org/";
+                }
+                // Roblox -> Wikipedia (Roblox blocks all iframes)
+                else if (url === "roblox") {
+                    alert("Roblox blocks iframes. Opening Wiki instead.");
+                    url = "https://en.wikipedia.org/wiki/Roblox";
+                }
+                
+                // Ensure HTTP protocol
+                if (!url.startsWith("http")) url = "https://" + url;
+                
+                // Final Check: If the URL is still pointing to a known-failed proxy, 
+                // re-route it to Wikipedia for stability.
+                if (url.includes("hidester.com/proxy.php") || url.includes("webproxy.net/browse.php")) { 
+                    url = "https://www.wikipedia.org/";
+                    alert("Proxy failed. Redirecting to Wikipedia for stability.");
+                }
+
+                webView.src = url;
+            }
+
+            if (webView && loaderOverlay) {
+                webView.onload = () => {
+                    loaderOverlay.style.display = "none";
+                };
+            }
+
+            if (backBtn && webView) {
+                backBtn.onclick = () => {
+                    if (webView.contentWindow) {
+                        try { webView.contentWindow.history.back(); } catch(e) { console.log("Cross-origin restriction"); }
+                    }
+                };
+            }
+
+            if (forwardBtn && webView) {
+                forwardBtn.onclick = () => {
+                    if (webView.contentWindow) {
+                        try { webView.contentWindow.history.forward(); } catch(e) { console.log("Cross-origin restriction"); }
+                    }
+                };
+            }
+
+            if (themeToggleBtn) {
+                themeToggleBtn.onclick = () => {
+                    const isLight = document.body.classList.toggle('light-mode');
+                    document.body.classList.toggle('dark-mode', !isLight);
+                    themeToggleBtn.innerHTML = isLight ? '🌙' : '☀️';
+                    themeToggleBtn.style.background = isLight ? '#495057' : '#a855f7';
+                };
+            }
+
+            if (addBookmarkBtn) addBookmarkBtn.onclick = saveBookmark;
+            if (bookmarkGrid) bookmarkGrid.onclick = handleBookmarkClick;
+
+            function getBookmarks() {
+                try {
+                    const bookmarks = localStorage.getItem('miniBrowserBookmarks');
+                    return bookmarks ? JSON.parse(bookmarks) : [];
+                } catch (e) {
+                    return [];
+                }
+            }
+
+            function saveBookmark() {
+                if (!webView) return;
+                let url = webView.src;
+                let title = "Bookmark";
+                
+                if (!url || url === 'about:blank' || url.startsWith('http://localhost') || url.startsWith('file://')) {
+                    alert("Cannot bookmark current page.");
+                    return;
+                }
+
+                try { title = url.replace(/https?:\/\/(www\.)?/, '').split('/')[0]; } catch (e) {}
+
+                const bookmarks = getBookmarks();
+                
+                if (bookmarks.some(bm => bm.url === url)) {
+                    alert("This URL is already bookmarked.");
+                    return;
+                }
+                
+                bookmarks.push({ title, url });
+                
+                try {
+                    localStorage.setItem('miniBrowserBookmarks', JSON.stringify(bookmarks));
+                    alert(`Bookmark saved: ${title}`);
+                    renderBookmarks();
+                } catch (e) {
+                    console.error("Could not save bookmarks.", e);
+                }
+            }
+
+            function removeBookmark(index) {
+                const bookmarks = getBookmarks();
+                if (index >= 0 && index < bookmarks.length) {
+                    bookmarks.splice(index, 1);
+                    try {
+                        localStorage.setItem('miniBrowserBookmarks', JSON.stringify(bookmarks));
+                        renderBookmarks();
+                    } catch (e) {}
+                }
+            }
+
+            function renderBookmarks() {
+                if (!bookmarkGrid) return;
+                const bookmarks = getBookmarks();
+                bookmarkGrid.innerHTML = '';
+
+                if (bookmarks.length === 0) {
+                    bookmarkGrid.innerHTML = '<p style="font-size: 14px; opacity: 0.7;">No bookmarks saved yet. Use the [+] button above to save a page!</p>';
+                    return;
+                }
+
+                bookmarks.forEach((bm, index) => {
+                    const tile = document.createElement('a');
+                    tile.className = 'bookmark-tile';
+                    tile.href = bm.url;
+                    tile.dataset.index = index;
+                    tile.title = bm.url;
+                    
+                    const iconChar = bm.title ? bm.title[0].toUpperCase() : '🌐';
+                    
+                    tile.innerHTML = `
+                        <div class="bookmark-icon">${iconChar}</div>
+                        <div class="bookmark-name">${bm.title}</div>
+                        <button class="remove-btn" data-index="${index}">×</button>
+                    `;
+                    bookmarkGrid.appendChild(tile);
+                });
+            }
+
+            function handleBookmarkClick(e) {
+                const tile = e.target.closest('.bookmark-tile');
+                const removeBtn = e.target.closest('.remove-btn');
+
+                if (removeBtn) {
+                    e.preventDefault();
+                    const index = parseInt(removeBtn.dataset.index);
+                    removeBookmark(index);
+                } else if (tile && urlInput) {
+                    e.preventDefault();
+                    const url = tile.href;
+                    urlInput.value = url;
+                    loadPage();
+                }
+            }
+        }
+    </script>
+</body>
+</html>
